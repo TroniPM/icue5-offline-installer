@@ -20,6 +20,7 @@ failures you are likely to hit.
 3. [Approaches that do NOT work](#3-approaches-that-do-not-work)
 4. [How this solution works](#4-how-this-solution-works)
 5. [Requirements](#5-requirements)
+   - [5.1 Paths you must change](#51-paths-you-must-change)
 6. [Step-by-step](#6-step-by-step)
 7. [Script reference](#7-script-reference)
 8. [Where iCUE actually gets installed](#8-where-icue-actually-gets-installed)
@@ -189,6 +190,110 @@ installed_info:         55 packages
 * ~1.5 GB free where the mirror goes (default `D:\icue-mirror`)
 * ~1 GB free on `C:` for the installation
 * Administrator for steps 00, 03, 04 (they write to `ProgramData` and create services)
+
+---
+
+## 5.1 Paths you must change
+
+These scripts were written on a machine that has a `D:` drive, and two of the defaults use
+it. **If your machine has no `D:`, nothing works until you change them.** Everything else in
+the scripts is a Windows or Corsair fixed location.
+
+### The full list
+
+| Path | Default | Where it appears | Do you change it? |
+|---|---|---|---|
+| **Package mirror** | `D:\icue-mirror` | `-Mirror` in `02-download-repository.ps1`, `03-install-offline.ps1`, `aux-download-single-package.ps1`, `aux-download-required-only.ps1` | **Yes**, if you have no `D:`, or less than ~1.5 GB free there |
+| **Tools folder** | `D:\icue-tools` | `-Tools` in `00-bootstrap.ps1`; `-Cuepkg` in `03-install-offline.ps1` | **Yes**, if you have no `D:` |
+| **Store (cuepkg install dir)** | `C:\ProgramData\Corsair\iCUE5 Initial Installer\packages` | `-Store` in `00`, `02`, `03`, `04`; hardcoded in `01` | **Almost never.** Corsair's installer creates it there. Only change if yours differs — see below |
+| **Repository URL** | `https://www3.corsair.com/software/CUE_V5/public/modules/windows/packages/` | `00` (sets it), `02` (downloads from it), `04` (restores it) | Only if Corsair moves the CDN |
+| **Index of packages** | `C:\ProgramData\Corsair\iCUE5 Initial Installer\manager\cuepkg.zip` | `00` watches for this file | No — it is where the official stub puts it |
+
+Notes:
+
+* The mirror and tools folders are **created by the scripts**, but the drive must exist.
+  `New-Item` cannot create a drive.
+* `01-check-environment.ps1` takes no parameters at all; its last section reads the store
+  path directly. If the store does not exist yet it simply reports that and continues — it
+  is a diagnostic, nothing depends on it.
+
+### Option A — pass the paths on every call (no file editing)
+
+Nothing to edit; just be consistent. This is the recommended approach because the repo stays
+pristine and `git pull` never conflicts.
+
+| Script | Parameter | Default |
+|---|---|---|
+| `00-bootstrap.ps1` | `-Tools` | `D:\icue-tools` |
+| `02-download-repository.ps1` | `-Mirror` | `D:\icue-mirror` |
+| `03-install-offline.ps1` | `-Mirror` | `D:\icue-mirror` |
+| `03-install-offline.ps1` | `-Cuepkg` | `D:\icue-tools\manager\cuepkg.exe` |
+| `aux-download-single-package.ps1` | `-Mirror` | `D:\icue-mirror` |
+| `aux-download-required-only.ps1` | `-Mirror` | `D:\icue-mirror` |
+
+### Option B — edit the defaults once
+
+Each default is a single line inside the `param(...)` block at the top of the file. Open the
+file in any editor and change the string on the right of `=`.
+
+| File | Line to look for | Replace with |
+|---|---|---|
+| `00-bootstrap.ps1` | `[string]$Tools = 'D:\icue-tools',` | your tools folder |
+| `02-download-repository.ps1` | `[string]$Mirror = 'D:\icue-mirror',` | your mirror folder |
+| `03-install-offline.ps1` | `[string]$Mirror = 'D:\icue-mirror',` | **the same** mirror folder |
+| `03-install-offline.ps1` | `[string]$Cuepkg = 'D:\icue-tools\manager\cuepkg.exe',` | `<tools>\manager\cuepkg.exe` |
+| `aux-download-single-package.ps1` | `[string]$Mirror = 'D:\icue-mirror',` | your mirror folder |
+| `aux-download-required-only.ps1` | `[string]$Mirror = 'D:\icue-mirror',` | your mirror folder |
+
+If you edit files, remember you are now diverging from the repository — keep your changes in
+a local branch or re-apply them after pulling.
+
+### Full run on a machine that only has `C:`
+
+```powershell
+# Administrator PowerShell
+.\00-bootstrap.ps1 -Tools 'C:\icue-tools'
+.\01-check-environment.ps1
+.\02-download-repository.ps1 -Mirror 'C:\icue-mirror'
+.\03-install-offline.ps1 -Mirror 'C:\icue-mirror' -Cuepkg 'C:\icue-tools\manager\cuepkg.exe'
+.\04-restore-registry.ps1
+```
+
+Any other drive works the same way — `E:`, a second SSD, or a folder inside your user
+profile such as `C:\Users\<you>\icue-mirror` (no admin needed to write there).
+
+### The two traps that cost the most time
+
+**1. Mirror mismatch between step 02 and step 03.**
+`02` writes to its `-Mirror`. `03` reads from *its* `-Mirror`. If they differ, `03` finds an
+empty folder, prints `mirror: 0 packages` and stops with
+`ERROR: mirror incomplete`. Always pass the identical value to both.
+
+**2. `-Cuepkg` mismatch with `-Tools`.**
+`00 -Tools 'C:\icue-tools'` puts `cuepkg.exe` at `C:\icue-tools\manager\cuepkg.exe`.
+If you then run `03` without `-Cuepkg`, it looks at `D:\icue-tools\manager\cuepkg.exe` and
+fails with `ERROR: ... not found. Run 00-bootstrap.ps1 first.` — even though step 00
+succeeded.
+
+### How to confirm your real store path
+
+You normally do not need to. Corsair's installer hardcodes it, and the scripts read the same
+value. To verify on your machine, look at the installer's own log line — it contains the exact
+`--installdir` it uses:
+
+```powershell
+Select-String -Path 'C:\ProgramData\Corsair\Logs\iCUE5 Initial Installer\*.log' -Pattern 'installdir' |
+  Select-Object -First 1 -ExpandProperty Line
+```
+
+You should see:
+
+```
+--installdir="C:\ProgramData\Corsair\iCUE5 Initial Installer\packages"
+```
+
+If your log shows a different path, pass it as `-Store` to `00`, `02`, `03` and `04`, and edit
+the constant in `01` (line starting with `$dl =`).
 
 ---
 

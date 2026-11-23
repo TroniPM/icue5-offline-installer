@@ -42,6 +42,44 @@ After step 3, launch iCUE from:
 C:\ProgramData\Corsair\iCUE5 Initial Installer\packages\iCUE Launcher.exe
 ```
 
+> **No `D:` drive?** Two defaults assume one. Read
+> [Paths you must change](#paths-you-must-change) before running anything.
+
+---
+
+## Paths you must change
+
+The scripts default to a **`D:` drive**. Plenty of machines don't have one. Only two values
+ever need changing:
+
+| What | Default | How to change |
+|---|---|---|
+| Package mirror (~1.5 GB) | `D:\icue-mirror` | `-Mirror` in `02`, `03`, `aux-download-single-package`, `aux-download-required-only` |
+| cuepkg copy | `D:\icue-tools` | `-Tools` in `00`, and `-Cuepkg` in `03` |
+
+Everything else is fixed by Windows or by Corsair. In particular **do not change**
+`C:\ProgramData\Corsair\iCUE5 Initial Installer\packages` — that is Corsair's own install
+location. The scripts read it; they don't choose it.
+
+**Two traps** (both cause confusing failures):
+
+1. If you pass `-Mirror` to step 02, you **must** pass the same `-Mirror` to step 03.
+   Otherwise step 03 looks in the default folder, finds it empty and stops.
+2. `03 -Cuepkg` must point inside whatever folder you gave `00 -Tools`.
+
+Example on a machine with only `C:`:
+
+```powershell
+.\00-bootstrap.ps1 -Tools 'C:\icue-tools'
+.\01-check-environment.ps1
+.\02-download-repository.ps1 -Mirror 'C:\icue-mirror'
+.\03-install-offline.ps1 -Mirror 'C:\icue-mirror' -Cuepkg 'C:\icue-tools\manager\cuepkg.exe'
+.\04-restore-registry.ps1
+```
+
+Full details, including how to edit the defaults permanently and how to confirm your real
+store path: [README-FULL.md](README-FULL.md#51-paths-you-must-change).
+
 ---
 
 ## Requirements
